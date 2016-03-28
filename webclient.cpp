@@ -16,65 +16,90 @@ using namespace std;
 const string FILE_NAME="index.html";
 const int REQ_ARGC=2;
 const int MAX_ATTEMPTS=5;   
-// new "^http://(www\\.)?([\\w\\.]+)(\\:(\\d+))?(\\/.+\\/)?(.*)$"
-// old "^http://(www\\.)?([\\w\\.]+)(\\:(\\d+))?(\\/.*)?$"
-const regex rex("^http://(www\\.)?([\\w\\.]+)(\\:(\\d+))?(\\/.+\\/)?(.*)$");
+const regex url_rex("^http://(www\\.)?([\\w\\.]+)(\\:(\\d+))?(\\/.*)?$");
+const regex path_rex("^(\\/.*\\/)(.*)$");
 
-void err_print(const char *msg);
 string port_no(string part);
 string get_path(string path);
-bool create_message(smatch url_part);
+void err_print(const char *msg);
+bool try_connection(smatch url_part);
+smatch get_matches(string url, regex rex);
 
 int main(int argc, char const *argv[])
 {   
     if ( ! ( argc == REQ_ARGC ) )
     {
         err_print("Wrong parameters, usage: ./webclient url");
-        return 1;
+        return EXIT_FAILURE;
     }
-    if ( ! regex_match(argv[1], rex) )
+    if ( ! regex_match(argv[1], url_rex) )
     {
         err_print("Bad url");
-        return 1;
+        return EXIT_FAILURE;
     }
-    smatch matches;
     string url = argv[1];
-    regex_match(url, matches, rex);
-    if ( ! create_message(matches) ) 
+    
+    if ( try_connection( get_matches(url,url_rex) ) ) 
     {
-        return 1;
+        return EXIT_FAILURE;
     }
-    return 0;
+    return EXIT_SUCCESS;
 }
 
-bool create_message(smatch url_part)
-{   // [0]full_url [1]www [2]domain [4]port [5]path [6]filename
+bool try_connection(smatch url_part)
+{   // [0]full_url [1]www [2]domain [4]port [5]path
     const string url  = "www." + static_cast<string>(url_part[2]);
-    const string path = get_path(static_cast<string>(url_part[5]));
     const string port = port_no(static_cast<string>(url_part[4]));
-    string file = static_cast<string>(url_part[6]);
+    smatch full_path = get_matches(url_part[5], path_rex); 
+    const string path = static_cast<string>(full_path[1]);
+    //string file = get_filename(static_cast<string>(full_path[2])); //TODO
     
-    struct addrinfo hints;
-    struct addrinfo *result;
-    int code;
+    
+    
+    struct addrinfo set;
+    struct addrinfo *results, *res;
+    int code, sckt;
 
-    memset(&hints, 0, sizeof(struct addrinfo));
-    hints.ai_family = AF_UNSPEC;    /* Allow IPv4 or IPv6 */
-    hints.ai_socktype = SOCK_DGRAM; /* Datagram socket */
-    hints.ai_flags = 0;
-    hints.ai_protocol = 0;          /* Any protocol */
+    cout << path << endl << url << endl << port << endl << url_part[5] << endl ;
 
-    if ((code = getaddrinfo(url.c_str(), port.c_str(), &hints, &result) ) != 0)
+
+    memset(&set, 0, sizeof(struct addrinfo));
+    set.ai_socktype = SOCK_STREAM; /* TCP Socket */
+    set.ai_family = AF_UNSPEC;     /* Allow IPv4 or IPv6 */
+    set.ai_protocol = 0;           /* Any protocol */
+    set.ai_flags = 0;
+
+    if ((code = getaddrinfo(url.c_str(), port.c_str(), &set, &results) ) != 0)
     { 
         err_print( gai_strerror(code) );
-        return false;
+        return EXIT_FAILURE;
     }
-    cout << path << endl << url << endl << port << endl << file << endl;
+    for (res = results; res != NULL; res = res->ai_next) // pripajam sa na prelozene adresy 
+    {
+        sckt = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
+        if (sckt == -1)
+        {
+            continue;
+        }
+        if (connect(sckt, res->ai_addr, res->ai_addrlen) != -1)
+        {
+            freeaddrinfo(results);  // free no longer needed 
+            break;                  // On Successfull connection
+        }
+        close(sckt);
+    }
+    if (res == NULL)
+    {
+        err_print("Could not connect");
+        return EXIT_FAILURE;
+    }
 
-    return true;
+
+    close(sckt);    // closing socket after succesfull connection
+    return EXIT_SUCCESS;
 }
 
-string port_no(string port)
+string port_no(string port)//TODO in one function
 {
     return (port.size() != 0) ? port : "80" ;
 }
@@ -85,4 +110,10 @@ string get_path(string path)
 void err_print(const char *msg)
 {
     cerr << msg << endl;    
+}
+smatch get_matches(string url, regex rex) // TODO
+{
+    smatch matches;
+    regex_match(url, matches, rex);
+    return matches;
 }
