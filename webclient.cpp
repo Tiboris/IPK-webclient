@@ -16,7 +16,9 @@ using namespace std;
 const string FILE_NAME="index.html";
 const int REQ_ARGC=2;
 const int MAX_ATTEMPTS=5;   
-const regex rex("^http://(www\\.)?([\\w\\.]+)(\\:(\\d+))?(\\/.*)?$");
+// new "^http://(www\\.)?([\\w\\.]+)(\\:(\\d+))?(\\/.+\\/)?(.*)$"
+// old "^http://(www\\.)?([\\w\\.]+)(\\:(\\d+))?(\\/.*)?$"
+const regex rex("^http://(www\\.)?([\\w\\.]+)(\\:(\\d+))?(\\/.+\\/)?(.*)$");
 
 void err_print(const char *msg);
 string port_no(string part);
@@ -46,10 +48,11 @@ int main(int argc, char const *argv[])
 }
 
 bool create_message(smatch url_part)
-{   // [0]full_url [1]www [2]domain [4]port [5]path
+{   // [0]full_url [1]www [2]domain [4]port [5]path [6]filename
     const string url  = "www." + static_cast<string>(url_part[2]);
     const string path = get_path(static_cast<string>(url_part[5]));
     const string port = port_no(static_cast<string>(url_part[4]));
+    string file = static_cast<string>(url_part[6]);
     
     struct addrinfo hints;
     struct addrinfo *result;
@@ -61,12 +64,12 @@ bool create_message(smatch url_part)
     hints.ai_flags = 0;
     hints.ai_protocol = 0;          /* Any protocol */
 
-    if ((code = getaddrinfo(url.c_str(), port.c_str(), &hints, &result) )!= 0)
+    if ((code = getaddrinfo(url.c_str(), port.c_str(), &hints, &result) ) != 0)
     { 
         err_print( gai_strerror(code) );
         return false;
     }
-    cout << code << "=?0" << endl;
+    cout << path << endl << url << endl << port << endl << file << endl;
 
     return true;
 }
