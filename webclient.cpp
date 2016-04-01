@@ -34,7 +34,10 @@ string get_default(string str, int type);
 smatch get_rex_matches(string url, regex rex, bool search);
 bool send_req(int sckt, string url, string file_path, int cnt, string ver="1");
 bool connect_to(smatch url_parts, int attempts);
-bool get_content();
+bool test_function();
+
+//TEST
+string get_cont(string type, int sckt, string url, string file_path, string ver);
 /*
 *
 *
@@ -108,8 +111,8 @@ bool connect_to(smatch url_parts, int attempts)
         err_print("Could not connect");
         return EXIT_FAILURE;
     }
-    int pokus = 1;
-    send_err = send_req(sckt, (sub+url), full_path, pokus);
+    int s_att = 1;
+    send_err = send_req(sckt, (sub+url), full_path, s_att);
     close(sckt); 
     if (send_err){
         return EXIT_FAILURE;
@@ -122,28 +125,36 @@ bool connect_to(smatch url_parts, int attempts)
 *
 *
 */
-bool send_req(int sckt, string url, string file_path, int cnt, string ver)
-{
+string get_cont(string type, int sckt, string url, string file_path, string ver){
     int res;
     char response[BUFF_SIZE];
     bzero(response, BUFF_SIZE);
     string resp_msg = "";
-    string msg =    "HEAD " + file_path + " HTTP/1." + ver + "\r\n" + 
+    string msg =    type + " " + file_path + " HTTP/1." + ver + "\r\n" + 
                     "Host: " + url + "\r\n" + "Connection: close\r\n\r\n";
     if ( send(sckt, msg.c_str(),msg.size(), 0) == -1 ) {
         err_print("Error while sending request");
-        return EXIT_FAILURE;
+        return "ErrInMyGet";
     } 
     while ( (res = recv(sckt, response, BUFF_SIZE-1, 0 )) )
     {
         if (res < 0) {
             err_print("Error while getting sesponse");
-            return EXIT_FAILURE;
+            return "ErrInMyGet";
         }
         else { // response get 
             resp_msg += response;
             bzero(response, BUFF_SIZE); // buff erase
         }
+    }
+    return resp_msg;
+}
+bool send_req(int sckt, string url, string file_path, int cnt, string ver)
+{
+    string resp_msg = get_cont("HEAD", sckt, url, file_path, ver);
+    if (resp_msg == "ErrInMyGet")
+    {
+        return EXIT_FAILURE;
     }
     // not working in funciot get_rex_matches problem with returning object
     smatch head;
@@ -151,7 +162,7 @@ bool send_req(int sckt, string url, string file_path, int cnt, string ver)
     //smatch head2=get_rex_matches(resp_msg, head_rex, true); head 2 magicaly working no idea why
     for (unsigned int i = 0; i < head.size(); ++i)
     {
-        cout<<"["<<i<<"]=\t"<<head[i]<<endl;
+        cout<<"["<<i<<"]= "<<head[i]<<endl;
     }
 
     // bad logic (long), find out different
@@ -159,7 +170,7 @@ bool send_req(int sckt, string url, string file_path, int cnt, string ver)
     if (cnt == 1)
     {
         if (head[1]=="1") {
-            if (get_content()){
+            if (test_function()){
                 return EXIT_FAILURE;
             }
         }
@@ -174,7 +185,7 @@ bool send_req(int sckt, string url, string file_path, int cnt, string ver)
     {
         if ( head[1]=="0")
         {
-            if (get_content()) {
+            if (test_function()) {
                 return EXIT_FAILURE;
             }
         }
@@ -186,7 +197,7 @@ bool send_req(int sckt, string url, string file_path, int cnt, string ver)
     }
     return EXIT_SUCCESS;
 }
-bool get_content ()
+bool test_function ()
 {
     for (int i = 1; i <= MAX_ATTEMPTS; ++i)
     {
