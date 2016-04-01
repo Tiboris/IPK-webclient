@@ -26,16 +26,19 @@ const string DEF_PATH = "/";
 const string DEF_NAME = "index.html";
 string filename;
 
-
 const regex url_rex("^http://(www\\.)?([\\w\\.]+)(\\:(\\d+))?(\\/.*)?$");
+const regex head_rex("HTTP\\/1.(\\d) (\\d+) (.*)");
 
 void err_print(const char *msg);
 string get_default(string str, int type);
-smatch get_matches(string url, regex rex);
-bool send_req(int sckt, string url, string file_path);
-bool connect_to(smatch url_parts);
+smatch get_rex_matches(string url, regex rex, bool search);
+bool send_req(int sckt, string url, string file_path, int cnt, string ver="1");
+bool connect_to(smatch url_parts, int attempts);
 bool get_content();
-
+/*
+*
+*
+*/
 int main(int argc, char const *argv[])
 {   
     string filename;
@@ -47,17 +50,25 @@ int main(int argc, char const *argv[])
         err_print("Bad url");
         return EXIT_FAILURE;
     }
-    string url = argv[1]; // 
-    if ( connect_to(get_matches(url,url_rex)) ) {
+    string url = argv[1]; //
+    int attempts = 0; 
+    if ( connect_to(get_rex_matches(url,url_rex,false), ++attempts) ) {
         return EXIT_FAILURE;
     }
     return EXIT_SUCCESS;
     // 1.1 chunk
     // 1.0 no chunk
 }
-
-bool connect_to(smatch url_parts)
+/*
+*
+*
+*/
+bool connect_to(smatch url_parts, int attempts)
 {   // [0]full_url [1]www [2]domain [4]port [5]path
+    if (attempts > MAX_ATTEMPTS) {
+        err_print("Too many redirects");
+        return EXIT_FAILURE;
+    }
     const string sub  = static_cast<string>(url_parts[1]);
     const string url  = static_cast<string>(url_parts[2]);
     const string port = get_default(static_cast<string>(url_parts[4]),U_PORT );
@@ -66,8 +77,8 @@ bool connect_to(smatch url_parts)
     const string path = get_default(full_path.substr(0,found+1),U_PATH );
     filename = get_default(full_path.substr(found+1), F_NAME );
 
+    bool send_err;
     int code, sckt;
-    bool send_err, req_err;
     struct addrinfo set;
     struct addrinfo *results, *res;
 
@@ -97,52 +108,90 @@ bool connect_to(smatch url_parts)
         err_print("Could not connect");
         return EXIT_FAILURE;
     }
-    send_err = send_req(sckt, (sub+url), full_path);
-    req_err = get_content();
+    int pokus = 1;
+    send_err = send_req(sckt, (sub+url), full_path, pokus);
     close(sckt); 
     if (send_err){
-        return EXIT_FAILURE;
-    }
-    else if (req_err){
         return EXIT_FAILURE;
     }
     else{
         return EXIT_SUCCESS;
     }
 }
-bool send_req(int sckt, string url, string file_path)
+/*
+*
+*
+*/
+bool send_req(int sckt, string url, string file_path, int cnt, string ver)
 {
     int res;
     char response[BUFF_SIZE];
+    bzero(response, BUFF_SIZE);
     string resp_msg = "";
-    string msg =    "HEAD " + file_path + " HTTP/1.1\r\n" + 
+    string msg =    "HEAD " + file_path + " HTTP/1." + ver + "\r\n" + 
                     "Host: " + url + "\r\n" + "Connection: close\r\n\r\n";
-    cout << msg << endl << endl;
     if ( send(sckt, msg.c_str(),msg.size(), 0) == -1 ) {
         err_print("Error while sending request");
         return EXIT_FAILURE;
     } 
-    while ( (res = recv(sckt, response, BUFF_SIZE, 0 )) )
+    while ( (res = recv(sckt, response, BUFF_SIZE-1, 0 )) )
     {
         if (res < 0) {
-            err_print("Get ERR");
+            err_print("Error while getting sesponse");
             return EXIT_FAILURE;
         }
-        else { // OK
+        else { // response get 
             resp_msg += response;
+            bzero(response, BUFF_SIZE); // buff erase
         }
     }
-    cout << resp_msg << endl << resp_msg.length()<< endl;
+    // not working in funciot get_rex_matches problem with returning object
+    smatch head;
+    regex_search(resp_msg, head, head_rex);
+    //smatch head2=get_rex_matches(resp_msg, head_rex, true); head 2 magicaly working no idea why
+    for (unsigned int i = 0; i < head.size(); ++i)
+    {
+        cout<<"["<<i<<"]=\t"<<head[i]<<endl;
+    }
 
+    // bad logic (long), find out different
+    
+    if (cnt == 1)
+    {
+        if (head[1]=="1") {
+            if (get_content()){
+                return EXIT_FAILURE;
+            }
+        }
+        else
+        {
+            if( send_req(sckt, url, file_path, ++cnt, "0") ){
+                return EXIT_FAILURE;
+            }
+        }
+    }
+    if ( cnt == 2 )
+    {
+        if ( head[1]=="0")
+        {
+            if (get_content()) {
+                return EXIT_FAILURE;
+            }
+        }
+        else 
+        {
+            err_print("Unexpected error");
+            return EXIT_FAILURE;
+        }
+    }
     return EXIT_SUCCESS;
 }
 bool get_content ()
 {
     for (int i = 1; i <= MAX_ATTEMPTS; ++i)
     {
-        //cout << i << endl;
-        if (i==4)
-        {
+        cout << i << endl;
+        if (i==4) {
             return EXIT_SUCCESS;   
         }
     }
@@ -162,9 +211,14 @@ void err_print(const char *msg)
 {
     cerr << msg << endl;    
 }
-smatch get_matches(string url, regex rex)
+smatch get_rex_matches(string input, regex rex, bool search)
 {
-    smatch matches;
-    regex_match(url, matches, rex);
-    return matches;
+    smatch output;
+    if (search) {
+        regex_search(input, output, rex);
+    }
+    else {
+        regex_match(input, output, rex);
+    }
+    return output;
 }
