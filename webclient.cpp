@@ -1,5 +1,6 @@
 #include <cstdlib>
 #include <iostream>
+#include <fstream>
 #include <string>
 #include <regex>
 #include <netinet/in.h>
@@ -22,6 +23,7 @@ const string DEF_PORT = "80";
 const string DEF_PATH = "/";
 const string DEF_NAME = "index.html";
 string file_name;
+string known_urls = "";
 int attempts = 0; 
 /*
 */
@@ -41,7 +43,6 @@ bool save_response(string response, bool chunked);
 string url_encode(const string input);
 /*
 *
-*
 */
 int main(int argc, char const *argv[])
 {   
@@ -60,7 +61,6 @@ int main(int argc, char const *argv[])
     return EXIT_SUCCESS;
 }
 /*
-*
 *
 */
 bool connect_to(smatch url_parts, int attempts)
@@ -115,7 +115,6 @@ bool connect_to(smatch url_parts, int attempts)
 }
 /*
 *
-*
 */
 bool send_req(int sckt, string url, string file_path, int cnt, string ver)
 {
@@ -131,13 +130,19 @@ bool send_req(int sckt, string url, string file_path, int cnt, string ver)
     string s_code = static_cast<string>(head[2]);
     int code = atoi(s_code.c_str());
     string err_msg = static_cast<string>(head[3]);
-    
-    cout << "----------" << endl;
-    cout << "Pokus "<< attempts << " file " << file_path << endl << "Head_ver " << ver << endl ;
-    cout << "----------" << endl;
+    bool chunked = regex_search(resp_msg, head, chunk_rex);
+
     if (code == 302 || code == 301) { 
         regex_search(resp_msg, head, locattion_rex);
         string url = static_cast<string>(head[1]);
+        if (code == 301) {
+            if ( known_urls.find(url) != string::npos ){
+                attempts--;
+            }
+            else {
+                known_urls.append(url, url.size());
+            }
+        }
         if (connect_to(get_rex_matches(url,url_rex), ++attempts) ) { 
             return EXIT_FAILURE;
         }
@@ -150,7 +155,6 @@ bool send_req(int sckt, string url, string file_path, int cnt, string ver)
         return EXIT_FAILURE;
     }
     if (code == 200) {
-        bool chunked = regex_search(resp_msg, head, chunk_rex);
         if ((cnt == 1) && (res_ver=="1")) {
             if (save_response(resp_msg, chunked)){
                 return EXIT_FAILURE;
@@ -179,7 +183,6 @@ bool send_req(int sckt, string url, string file_path, int cnt, string ver)
 }
 /*
 *
-*
 */
 string get_cont( int sckt, string url, string file_path, string ver){
     int res;
@@ -191,7 +194,7 @@ string get_cont( int sckt, string url, string file_path, string ver){
     if ( send(sckt, msg.c_str(),msg.size(), 0) == -1 ) {
         err_print("Error while sending request");
         return "ErrInMyGet";
-    } 
+    }
     while ( (res = recv(sckt, response, BUFF_SIZE-1, 0 )) )
     {
         if (res < 0) {
@@ -199,35 +202,35 @@ string get_cont( int sckt, string url, string file_path, string ver){
             return "ErrInMyGet";
         }
         else { // response get 
-            resp_msg += response;
+            resp_msg.append(response, res);
             bzero(response, BUFF_SIZE); // buff erase
         }
     }
     return resp_msg;
 }
 /*
+*
 */
 bool save_response(string response, bool chunked)
 {
     size_t pos = response.find("\r\n\r\n");
     response.erase(0, pos+4);
     if (chunked) {
-        while (1)
+        string chunked_resp = response;
+        response = "";
+        unsigned int block_size;
+        while ((pos = chunked_resp.find("\r\n")) != string::npos )
         {
-            break;
+            block_size = strtoul(chunked_resp.substr(0,pos).c_str(), NULL, 16);
+            chunked_resp.erase(0, pos+2);
+            response += chunked_resp.substr(0,block_size);
+            chunked_resp.erase(0,block_size);
         }
     }
-    FILE *output;
-    if ( (output = fopen(file_name.c_str(), "w")) == NULL) {
-        err_print("Cannot create output file");
-        return EXIT_FAILURE;
-    }
-    if (fputs(response.c_str(), output) == EOF)
-    {
-        err_print("Error writing to output file");
-        return EXIT_FAILURE;
-    }
-    fclose(output);
+    ofstream myfile;
+    myfile.open(file_name);
+    myfile << response;
+    myfile.close();
     return EXIT_SUCCESS;
 }
 /*
@@ -246,13 +249,6 @@ string get_default(string str, int type)
 /*
 *
 */
-void err_print(const char *msg)
-{
-    cerr << msg << endl;    
-}
-/*
-*
-*/
 string url_encode(string input)
 {
     regex space(" ");
@@ -262,9 +258,19 @@ string url_encode(string input)
     input = regex_replace (input,tilda,replacement[1]);
     return input;
 }
+/*
+*
+*/
 smatch get_rex_matches(string input, regex rex)
 {
     smatch output;
     regex_match(input, output, rex);
     return output;
+}
+/*
+*
+*/
+void err_print(const char *msg)
+{
+    cerr << msg << endl;    
 }
