@@ -1,2 +1,2 @@
 # simple_webclient
-First project IPP
+First project IPK FIT

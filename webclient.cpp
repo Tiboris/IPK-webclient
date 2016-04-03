@@ -130,8 +130,7 @@ bool connect_to(string url,string port,string path, int attempts, string ver)
 
     string resp_msg = get_cont(sckt, url, path, ver);
     
-    if (resp_msg == "ErrInMyGet")
-    {
+    if (resp_msg == "ErrInMyGet") {
         return EXIT_FAILURE;
     }
     smatch head;
@@ -142,7 +141,31 @@ bool connect_to(string url,string port,string path, int attempts, string ver)
     string err_msg = static_cast<string>(head[3]);
     bool chunked = regex_search(resp_msg, head, chunk_rex);
 
-    if (resp_code == 302 || resp_code == 301) { 
+    if (resp_code == 200) {
+        if ((send_att  == 1) && (res_ver=="1")) {
+            if (save_response(resp_msg, chunked)){
+                return EXIT_FAILURE;
+            }
+        }
+        if ((send_att == 1) && (res_ver == "0")) {
+            ++send_att;
+            if( connect_to(url,port, path, attempts, "0") ){
+                return EXIT_FAILURE;
+            }
+        }
+        if ( (send_att == 2) && (res_ver == "0")) {
+            if (save_response(resp_msg, chunked)) {
+                return EXIT_FAILURE;
+            }
+        }
+        if ((send_att == 2) && (res_ver != "0")) {
+            err_print("Unexpected error");
+            return EXIT_FAILURE;
+        }
+        close(sckt);
+        return EXIT_SUCCESS;
+    }
+     if (resp_code == 302 || resp_code == 301) { 
         regex_search(resp_msg, head, locattion_rex);
         string location = static_cast<string>(head[1]);
         smatch url_parts;
@@ -168,33 +191,19 @@ bool connect_to(string url,string port,string path, int attempts, string ver)
             return EXIT_SUCCESS;            
         }
     }
-    if (resp_code > 399 && resp_code < 600) {
-        err_print((s_code + " " + err_msg).c_str());
-        return EXIT_FAILURE;
-    }
-    if (resp_code == 200) {
-        if ((send_att  == 1) && (res_ver=="1")) {
-            if (save_response(resp_msg, chunked)){
-                return EXIT_FAILURE;
-            }
-        }
-        if ((send_att == 1) && (res_ver == "0")) {
-            ++send_att;
+    if ((resp_code==400) && (res_ver == "0"))
+    {
+        if ((send_att == 1) ) {
             if( connect_to(url,port, path, attempts, "0") ){
                 return EXIT_FAILURE;
             }
+            close(sckt);
+            return EXIT_SUCCESS;
         }
-        if ( (send_att == 2) && (res_ver == "0")) {
-            if (save_response(resp_msg, chunked)) {
-                return EXIT_FAILURE;
-            }
-        }
-        if ((send_att == 2) && (res_ver != "0")) {
-            err_print("Unexpected error");
-            return EXIT_FAILURE;
-        }
-        close(sckt);
-        return EXIT_SUCCESS;
+    }
+    if (resp_code > 399 && resp_code < 600) {
+        err_print((s_code + " " + err_msg).c_str());
+        return EXIT_FAILURE;
     }
     else{
         err_print(( "ERR : " + s_code + " " + err_msg).c_str());
