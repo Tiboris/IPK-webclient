@@ -87,7 +87,7 @@ bool connect_to(string url,string port,string path, int attempts, string ver)
     if ( (jump = known_urls.find(to_find)) != string::npos) {
         string cut = known_urls.substr(jump);
         jump = to_find.size();
-        cut=cut.substr(23);
+        cut=cut.substr(jump);
         jump = cut.find_first_of("|");
         string found_url="http://"+cut.substr(0,jump)+path;
         smatch url_part;
