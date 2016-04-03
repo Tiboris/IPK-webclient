@@ -1,0 +1,5 @@
+./webclient http://sport.sk/ 
+./webclient http://www.fit.vutbr.cz/study/courses/IPK/public/test/redir.php
+./webclient http://www.fit.vutbr.cz/study/courses/IPK/public/some\ text.txt
+./webclient http://www.fit.vutbr.cz                                        
+./webclient http://www.fit.vutbr.cz/common/img/fit_logo_cz.gif   
