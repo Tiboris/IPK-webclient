@@ -1,2 +1,5 @@
 # simple_webclient
-First project IPK FIT
+First project to class IPK @ FIT
+
+##Usage:
+- `./webclient <url>`
