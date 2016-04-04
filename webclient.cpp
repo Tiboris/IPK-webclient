@@ -9,9 +9,11 @@
 #include <sys/socket.h>
 #include <netdb.h>
 /*
+*
 */
 using namespace std;
 /*
+*   Used constants and variables
 */
 const int U_PORT = 0;
 const int U_PATH = 1;
@@ -24,7 +26,6 @@ const string DEF_PATH = "/";
 const string DEF_NAME = "index.html";
 string file_name;
 string known_urls = "";
-int send_att = 1;
 int attempts = 0; 
 /*
 * Used regular expressions
@@ -34,19 +35,18 @@ const regex head_rex("HTTP\\/1.(\\d) (\\d+) (.*)");
 const regex chunk_rex("Transfer-Encoding: chunked");
 const regex locattion_rex("Location: (.*)");
 const regex space(" ");
-const   regex tilda("~");
+const regex tilda("~");
 /*
 * Prototypes of functions
 */
 void err_print(const char *msg);
 string get_default(string str, int type);
 smatch get_rex_matches(string url, regex rex);
-//bool send_req(int sckt, string url, string file_path, int cnt, string ver="1");
 string get_cont(int sckt, string url, string file_path, string ver);
 bool connect_to(string url,string port,string path, int attempts, string ver="1");
 bool save_response(string response, bool chunked);
 /*
-*
+*   Main
 */
 int main(int argc, char const *argv[])
 {   
@@ -64,18 +64,18 @@ int main(int argc, char const *argv[])
     const string path = get_default(static_cast<string>(url_parts[5]), U_PATH);
     const string port = get_default(static_cast<string>(url_parts[4]),U_PORT );
     url  = static_cast<string>(url_parts[1]) + static_cast<string>(url_parts[2]);
-    if ( connect_to(url, port, path, ++attempts) ) {
+    if ( connect_to(url, port, path, attempts) ) {
         return EXIT_FAILURE;
     }
     return EXIT_SUCCESS;
 }
 /*
-*
+*   For connection handling
 */
 bool connect_to(string url,string port,string path, int attempts, string ver)
 {   
     size_t pos = path.find_last_of("/");
-    if (attempts == 1) {
+    if (attempts == 0) {
         file_name = get_default(path.substr(pos+1), F_NAME );
     }
     if (attempts > MAX_ATTEMPTS) {
@@ -114,10 +114,10 @@ bool connect_to(string url,string port,string path, int attempts, string ver)
     for (res = results; res != NULL; res = res->ai_next)  
     {   // connecting to translated addresses
         sckt = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
-        if (sckt == -1){
+        if (sckt == -1) {
             continue;
         }
-        if (connect(sckt, res->ai_addr, res->ai_addrlen) != -1){
+        if (connect(sckt, res->ai_addr, res->ai_addrlen) != -1) {
             freeaddrinfo(results);  // free no longer needed 
             break;                  // On Successfull connection
         }
@@ -127,12 +127,12 @@ bool connect_to(string url,string port,string path, int attempts, string ver)
         err_print("Could not connect");
         return EXIT_FAILURE;
     }
-
+    // Saving response
     string resp_msg = get_cont(sckt, url, path, ver);
-    
     if (resp_msg == "ErrInMyGet") {
         return EXIT_FAILURE;
     }
+    // Iterator for regex output
     smatch head;
     regex_search(resp_msg, head, head_rex);
     string res_ver = static_cast<string>(head[1]);
@@ -140,46 +140,35 @@ bool connect_to(string url,string port,string path, int attempts, string ver)
     resp_code = atoi(s_code.c_str());
     string err_msg = static_cast<string>(head[3]);
     bool chunked = regex_search(resp_msg, head, chunk_rex);
-
-    if (resp_code == 200) {
-        if ((send_att  == 1) && (res_ver=="1")) {
+    close(sckt);    // closing socket
+    if (resp_code == 200) { // OK
+        if ( res_ver == ver ) {
             if (save_response(resp_msg, chunked)){
                 return EXIT_FAILURE;
             }
+            return EXIT_SUCCESS;
         }
-        if ((send_att == 1) && (res_ver == "0")) {
-            ++send_att;
+        if ( res_ver != ver ) {
             if( connect_to(url,port, path, attempts, "0") ){
                 return EXIT_FAILURE;
             }
-        }
-        if ( (send_att == 2) && (res_ver == "0")) {
-            if (save_response(resp_msg, chunked)) {
-                return EXIT_FAILURE;
-            }
-        }
-        if ((send_att == 2) && (res_ver != "0")) {
-            err_print("Unexpected error");
-            return EXIT_FAILURE;
-        }
-        close(sckt);
-        return EXIT_SUCCESS;
+            return EXIT_SUCCESS;
+        }        
     }
-     if (resp_code == 302 || resp_code == 301) { 
+    if (resp_code == 302 || resp_code == 301) { // REDIRECT
         regex_search(resp_msg, head, locattion_rex);
         string location = static_cast<string>(head[1]);
+        string head_location = location;
         smatch url_parts;
         regex_match(location,url_parts,url_rex);
         path = get_default(static_cast<string>(url_parts[5]), U_PATH);
         port = get_default(static_cast<string>(url_parts[4]), U_PORT);
-        location  = static_cast<string>(url_parts[1]) + static_cast<string>(url_parts[2]);
-        close(sckt);
-        if (location == "")
-        {
-            err_print("Bad Location in HEAD response");
+        location = static_cast<string>(url_parts[1]) + static_cast<string>(url_parts[2]);
+        if (location == "") { // if regex matched bad url after location 
+            err_print(("Bad "+s_code+" Location in HEAD response: "+head_location).c_str());
             return EXIT_FAILURE;
         }
-        if (resp_code == 301 ) {
+        if (resp_code == 301 ) { // saving url to cache
             if ( known_urls.find("^"+url+">>>>"+location+"|\n") == string::npos ){
                 known_urls.append("^"+url+">>>>"+location+"|\n");
             }        
@@ -187,31 +176,24 @@ bool connect_to(string url,string port,string path, int attempts, string ver)
         if (connect_to(location,port,path, ++attempts) ) { 
             return EXIT_FAILURE;
         }
-        else {
-            return EXIT_SUCCESS;            
-        }
+        return EXIT_SUCCESS;
     }
-    if ((resp_code==400) && (res_ver == "0"))
-    {
-        if ((send_att == 1) ) {
-            if( connect_to(url,port, path, attempts, "0") ){
-                return EXIT_FAILURE;
-            }
-            close(sckt);
-            return EXIT_SUCCESS;
+    if ((resp_code==400) && (res_ver != ver)) { // BAD REQUEST
+        if( connect_to(url,port, path, attempts, "0") ){
+            return EXIT_FAILURE;
         }
+        return EXIT_SUCCESS;
     }
-    if (resp_code > 399 && resp_code < 600) {
+    if (resp_code > 399 && resp_code < 600) { // OTHER ERRORS
         err_print((s_code + " " + err_msg).c_str());
         return EXIT_FAILURE;
     }
-    else{
-        err_print(( "ERR : " + s_code + " " + err_msg).c_str());
-        return EXIT_FAILURE;
-    }
+    // OTHER NOT KNOWN ERRORS
+    err_print(( "ERR : " + s_code + " " + err_msg).c_str());
+    return EXIT_FAILURE;
 }
 /*
-*
+*   For sending head request and returning response
 */
 string get_cont( int sckt, string url, string file_path, string ver){
     int res;
@@ -219,8 +201,8 @@ string get_cont( int sckt, string url, string file_path, string ver){
     bzero(response, BUFF_SIZE);
     string resp_msg = "";
     string replacement[2] = { "%20","%7E"};
-    file_path = regex_replace(file_path,space,replacement[0]);
-    file_path = regex_replace(file_path,tilda,replacement[1]);
+    file_path  = regex_replace(file_path,space,replacement[0]);
+    file_path  = regex_replace(file_path,tilda,replacement[1]);
     string msg =    "GET " + file_path + " HTTP/1." + ver + "\r\n" + 
                     "Host: " + url + "\r\n" + "Connection: close\r\n\r\n";
     if ( (send(sckt, msg.c_str(),msg.size(), 0)) < 1 ) {
@@ -241,7 +223,7 @@ string get_cont( int sckt, string url, string file_path, string ver){
     return resp_msg;
 }
 /*
-*
+*   For writing into file
 */
 bool save_response(string response, bool chunked)
 {
@@ -252,7 +234,7 @@ bool save_response(string response, bool chunked)
         response = "";
         unsigned int block_size;
         while ((pos = chunked_resp.find("\r\n")) != string::npos )
-        {
+        {   // real cutting of string magic
             block_size = strtoul(chunked_resp.substr(0,pos).c_str(), NULL, 16);
             chunked_resp.erase(0, pos+2);
             response += chunked_resp.substr(0,block_size);
@@ -266,7 +248,7 @@ bool save_response(string response, bool chunked)
     return EXIT_SUCCESS;
 }
 /*
-*
+*   For getting Default values
 */
 string get_default(string str, int type)
 {
@@ -279,7 +261,7 @@ string get_default(string str, int type)
     return NULL;
 }
 /*
-*
+*   For printing errors
 */
 void err_print(const char *msg)
 {
