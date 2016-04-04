@@ -29,7 +29,7 @@ int attempts = 0;
 /*
 * Used regular expressions
 */
-const regex url_rex("^http://(www\\.)?([\\w\\.]+)(\\:(\\d+))?(\\/.*)?$");
+const regex url_rex("^http://(www\\.)?([\\w\\.-]+)(\\:(\\d+))?(\\/.*)?$");
 const regex head_rex("HTTP\\/1.(\\d) (\\d+) (.*)");
 const regex chunk_rex("Transfer-Encoding: chunked");
 const regex locattion_rex("Location: (.*)");
